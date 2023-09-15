@@ -12,12 +12,12 @@
 // Pins can be changed, see the GPIO function select table in the datasheet for information on GPIO assignments
 #define LCD_SPI_PORT spi1
 #define LCD_MISO 12
-#define LCD_CS 9
-#define LCD_SCK 10
+#define LCD_CS 13
+#define LCD_SCK 14
 #define LCD_MOSI 11
-#define LCD_RESET 15
-#define LCD_DC 8
-#define LCD_LED 13
+#define LCD_RESET 22
+#define LCD_DC 26
+#define LCD_LED 16
 #define LCD_LED_PWM_MAX 2000
 
 #define MADCTL_MX 0x40
@@ -149,12 +149,23 @@ void ili9341_Init(uint rot)
   gpio_set_dir(LCD_RESET, GPIO_OUT);
   gpio_put(LCD_RESET, 1);
 
+  //gpio_init(LCD_LED);
+  //gpio_set_dir(LCD_LED, GPIO_OUT);
+  //gpio_put(LCD_LED, 1);
+
   // LCD BackLight PWM control
   gpio_set_function(LCD_LED, GPIO_FUNC_PWM);
   slice_num = pwm_gpio_to_slice_num(LCD_LED);
-  pwm_set_wrap(slice_num, (LCD_LED_PWM_MAX - 1));
-  pwm_set_chan_level(slice_num, LCD_LED, 0);
+
+  pwm_config config = pwm_get_default_config();
+  // Set divider, reduces counter clock to sysclock/this value
+  pwm_config_set_clkdiv(&config, 4.f);
+  // Load the configuration into our PWM slice, and set it running.
+  pwm_init(slice_num, &config, true);
+
+  pwm_set_wrap(slice_num, 8);
   pwm_set_enabled(slice_num, true);
+
 
   // initialize LCD
   ili9341_HardReset();
@@ -181,7 +192,7 @@ void ili9341_SstLED(uint parcent)
   {
     parcent = 100;
   }
-  pwm_set_chan_level(slice_num, LCD_LED, parcent * 20);
+  pwm_set_chan_level(slice_num, PWM_CHAN_A, parcent * 20);
 }
 
 void ili9341_SendInitStr()
@@ -297,7 +308,8 @@ void ili9341_SetWindow(uint x, uint y, uint w, uint h)
   ili9341_SendData(cmd, buf4, 4);
 }
 
-void lcd_Flash_CB(lv_disp_t * disp, const lv_area_t * area, lv_color_t * buf)
+
+void lcd_Flash_CB(struct _lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p)
 {
   uint8_t cmd = 0x2C;
   uint x1, y1;
@@ -321,14 +333,14 @@ void lcd_Flash_CB(lv_disp_t * disp, const lv_area_t * area, lv_color_t * buf)
    *  transfer pixel data via SPI function
    */
 
-  /* spi_write_blocking(LCD_SPI_PORT, (void *)buf, size*2); */
-  /* ili9341_SetCS(1); */
+   //spi_write_blocking(LCD_SPI_PORT, (void *)px_map, size*2);
+   //ili9341_SetCS(1);
 
   /*
    *  transfer pixel data via DMA function
    */
-  lcd_Send_Color_DMA((void *) buf,  size*2);
-  lv_disp_flush_ready(disp);
+  lcd_Send_Color_DMA((void *) color_p,  size*2);
+  lv_disp_flush_ready(disp_drv);
 }
 
 void lcd_Send_Color_DMA(void * buf, uint16_t length)
@@ -348,7 +360,7 @@ lv_coord_t lcd_Get_Width()
   return(ili9341_resolution.width);
 }
 
-lv_coord_t lcd_Get_height()
+lv_coord_t lcd_Get_Height()
 {
   return(ili9341_resolution.height);
 }

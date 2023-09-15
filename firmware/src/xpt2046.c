@@ -1,14 +1,11 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "pico/binary_info.h"
-#include "pio_spi.h"
 #include "xpt2046.h"
 #include "lvgl.h"
+#include "hardware/spi.h"
 
-#define XPT2046_CS 16
-#define XPT2046_CLK 17
-#define XPT2046_MOSI 18
-#define XPT2046_MISO 19
+#define XPT2046_CS 17
 
 #define XPT2046_BITS 12
 #define XPT2046_X_MIN  100
@@ -32,15 +29,10 @@
 #define CONV_12_BIT 0b00000000
 #define START_BIT   0b10000000
 
-pio_spi_inst_t spi = {
-        .pio = pio0,
-        .sm = 0,
-        .cs_pin = XPT2046_CS};
-
 uint8_t spiSendBuf[3];
 uint8_t spiRecvBuf[3];
 
-uint8_t bits = 12;
+
 uint8_t conv = CONV_12_BIT;
 struct  {
   uint xMin;
@@ -63,26 +55,17 @@ struct {
   uint y;
 } origin;
 
-void xpt2046_Init(uint rot)
+static spi_inst_t * priv_spi_inst;
+
+void xpt2046_Init(uint rot, spi_inst_t * spi_inst)
 {
+  priv_spi_inst = spi_inst;
+
   gpio_init(XPT2046_CS);
+  gpio_set_function(XPT2046_CS, GPIO_FUNC_SIO);
   gpio_set_dir(XPT2046_CS, GPIO_OUT);
   gpio_put(XPT2046_CS, 1);
-  float clkdiv = 31.25f;  // 1 MHz @ 125 clk_sys
-  uint offset = pio_add_program(spi.pio, &spi_cpha0_program);
 
-  pio_spi_init(   spi.pio,
-                  spi.sm,
-                  offset,
-                  8,       // 8 bits per SPI frame
-                  31.25f,  // 1 MHz @ 125 clk_sys
-                  false,   // CPHA = 0
-                  false,   // CPOL = 0
-                  XPT2046_CLK,
-                  XPT2046_MOSI,
-                  XPT2046_MISO
-  );
-  bits = CONV_12_BIT;
   range.xMin = 100;
   range.xMax = 1900;
   range.yMin = 200;
@@ -96,15 +79,83 @@ void xpt2046_Init(uint rot)
   origin.y = range.yMin;
 }
 
+#define READ_X 0x90
+#define READ_Y 0xD0
+
+#define ILI9341_TOUCH_SCALE_X 320
+#define ILI9341_TOUCH_SCALE_Y 240
+
+#define ILI9341_TOUCH_MIN_RAW_X 1500
+#define ILI9341_TOUCH_MAX_RAW_X 31000
+#define ILI9341_TOUCH_MIN_RAW_Y 3276
+#define ILI9341_TOUCH_MAX_RAW_Y 30110
+
+
+#define MAX_SAMPLES 3
+
+static void inline send_bytes(uint8_t * data, uint8_t len) {
+  spi_write_blocking(priv_spi_inst, data, len);
+}
+
+bool ILI9341_T_TouchGetCoordinates(uint16_t* x, uint16_t* y) {
+
+  static const uint8_t cmd_read_x[] = { READ_X };
+  static const uint8_t cmd_read_y[] = { READ_Y };
+  uint8_t zeroes_tx[] = { 0x00, 0x00 };
+
+  gpio_put(XPT2046_CS, 0);
+
+  uint32_t avg_x = 0;
+  uint32_t avg_y = 0;
+  uint8_t nsamples = 0;
+  for(uint8_t i = 0; i < MAX_SAMPLES; i++) {
+
+    nsamples++;
+
+    send_bytes( (uint8_t*)cmd_read_y, 1);
+    uint8_t y_raw[2] = {0, 0};
+    spi_read_blocking(priv_spi_inst, 0, y_raw, 2);
+
+    send_bytes( (uint8_t*)cmd_read_x, 1);
+    uint8_t x_raw[2] = {0, 0};
+    spi_read_blocking(priv_spi_inst, 0, x_raw, 2);
+
+    avg_x += (((uint16_t)x_raw[0]) << 8) | ((uint16_t)x_raw[1]);
+    avg_y += (((uint16_t)y_raw[0]) << 8) | ((uint16_t)y_raw[1]);
+  }
+
+  gpio_put(XPT2046_CS, 1);
+
+  if(nsamples < MAX_SAMPLES)
+    return false;
+
+  uint32_t raw_x = (avg_x / MAX_SAMPLES);
+  if(raw_x < ILI9341_TOUCH_MIN_RAW_X) raw_x = ILI9341_TOUCH_MIN_RAW_X;
+  if(raw_x > ILI9341_TOUCH_MAX_RAW_X) raw_x = ILI9341_TOUCH_MAX_RAW_X;
+
+  uint32_t raw_y = (avg_y / MAX_SAMPLES);
+  if(raw_y < ILI9341_TOUCH_MIN_RAW_X) raw_y = ILI9341_TOUCH_MIN_RAW_Y;
+  if(raw_y > ILI9341_TOUCH_MAX_RAW_Y) raw_y = ILI9341_TOUCH_MAX_RAW_Y;
+
+  *x = (raw_x - ILI9341_TOUCH_MIN_RAW_X) * ILI9341_TOUCH_SCALE_X / (ILI9341_TOUCH_MAX_RAW_X - ILI9341_TOUCH_MIN_RAW_X);
+  *y = (raw_y - ILI9341_TOUCH_MIN_RAW_Y) * ILI9341_TOUCH_SCALE_Y / (ILI9341_TOUCH_MAX_RAW_Y - ILI9341_TOUCH_MIN_RAW_Y);
+
+  if (*y > ILI9341_TOUCH_SCALE_Y)
+    return false;
+  if (*x > ILI9341_TOUCH_SCALE_X)
+    return false;
+  return true;
+}
+
 int xpt2046_raw_pos(uint16_t * x, uint16_t * y)
 {
   uint16_t xVal;
   uint16_t yVal;
-  spiSendBuf[0] = (START_BIT | conv | CHAN_X);
+  spiSendBuf[0] = (START_BIT | CONV_12_BIT | CHAN_X);
   spiSendBuf[1] = 0;
   spiSendBuf[2] = 0;
   gpio_put(XPT2046_CS, 0);
-  pio_spi_write8_read8_blocking(&spi, spiSendBuf, spiRecvBuf, 3);
+  spi_write_read_blocking(priv_spi_inst, spiSendBuf, spiRecvBuf, 3);
   gpio_put(XPT2046_CS, 1);
   if(conv == CONV_8_BIT)
   {
@@ -116,8 +167,10 @@ int xpt2046_raw_pos(uint16_t * x, uint16_t * y)
   }
 
   spiSendBuf[0] = (START_BIT | conv | CHAN_Y);
+
   gpio_put(XPT2046_CS, 0);
-  pio_spi_write8_read8_blocking(&spi, spiSendBuf, spiRecvBuf, 3);
+  spi_write_read_blocking(priv_spi_inst, spiSendBuf, spiRecvBuf, 3);
+
   gpio_put(XPT2046_CS, 1);
   if(conv == CONV_8_BIT)
   {
@@ -145,7 +198,7 @@ int xpt2046_raw_pos(uint16_t * x, uint16_t * y)
 int xpt2046_Pos(uint16_t * posX, uint16_t * posY)
 {
   int N = 10;
-  int attempts = 20;
+  int attempts = 1;
   uint16_t xx = 0;
   uint16_t yy = 0;
   uint done = 0;
@@ -208,11 +261,28 @@ int xpt2046_Pos(uint16_t * posX, uint16_t * posY)
   return(0);
 }
 
-void xpt2046_read_cb(lv_indev_t * indev, lv_indev_data_t * data)
+static bool is_pressed = false;
+static uint16_t posX;
+static uint16_t posY;
+
+void xpt2046_poll()
 {
-  uint16_t posX;
-  uint16_t posY;
-  if(xpt2046_Pos(&posX, &posY) == -1)
+  is_pressed = ILI9341_T_TouchGetCoordinates(&posX, &posY);
+}
+
+void xpt2046_read_cb(struct _lv_indev_drv_t * indev_drv, lv_indev_data_t * data)
+{
+  uint32_t margin = 15;
+  if ((posX < margin)||(posX > ILI9341_TOUCH_SCALE_X - margin))
+  {
+    is_pressed = false;
+  }
+  if ((posY < margin)||(posY > ILI9341_TOUCH_SCALE_Y - margin))
+  {
+    is_pressed = false;
+  }
+
+  if(!is_pressed)
   {
     data->point.x = 0;
     data->point.y = 0;
@@ -220,7 +290,7 @@ void xpt2046_read_cb(lv_indev_t * indev, lv_indev_data_t * data)
   }
   else
   {
-    data->point.x = posX;
+    data->point.x = 320-posX;
     data->point.y = posY;
     data->state = 1;
   }

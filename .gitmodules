@@ -1,0 +1,9 @@
+[submodule "firmware/libs/lvgl"]
+	path = firmware/libs/lvgl
+	url = https://github.com/lvgl/lvgl
+[submodule "firmware/libs/pico-sdk"]
+	path = firmware/libs/pico-sdk
+	url = https://github.com/raspberrypi/pico-sdk
+[submodule "firmware/libs/freeRTOS"]
+	path = firmware/libs/freeRTOS
+	url = https://github.com/freeRTOS/freeRTOS
