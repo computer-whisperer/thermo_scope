@@ -22,17 +22,24 @@ public:
     double value;
     uint64_t timestamp;
   };
-  RingBuffer<DataPoint> influx_export_buffer{100};
+  RingBuffer<DataPoint> influx_export_buffer{50};
   RingBuffer<float> graph_downsample_buffer{200};
   std::string channel_name;
   explicit DataChannel (std::string channel_name_in) : channel_name(channel_name_in) {
-    queue_init_with_spinlock(&intercore_data_queue, sizeof(struct DataPoint), 40, 31);
+    queue_init(&intercore_data_queue, sizeof(struct DataPoint), 40);
   }
 
   void push_new_value (double new_value) {
     struct DataPoint new_point;
     new_point.value = new_value;
     new_point.timestamp = to_us_since_boot(get_absolute_time())*1000 + data_collection_timestamp_offset;
+    queue_add_blocking(&intercore_data_queue, &new_point);
+  }
+
+  void push_new_value (double new_value, absolute_time_t timestamp) {
+    struct DataPoint new_point;
+    new_point.value = new_value;
+    new_point.timestamp = to_us_since_boot(timestamp)*1000 + data_collection_timestamp_offset;
     queue_add_blocking(&intercore_data_queue, &new_point);
   }
 

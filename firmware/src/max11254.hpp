@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <vector>
 #include "hardware/spi.h"
+#include "pico/time.h"
 
 
 // read / write bits
@@ -38,15 +39,25 @@
 class MAX11254
 {
 private:
-  int8_t cs;
-  int8_t rst;
-  int8_t rdy;
   double referenceVoltage;
   void reset() const;
   spi_inst_t * spi_inst;
   std::vector<struct DataChannel*> dataChannels;
+  uint32_t cs_gpio;
+  uint32_t rst_gpio;
+  uint32_t rdy_gpio;
+
+  bool needs_cmd = true;
+  int32_t update_phase = 0;
+  absolute_time_t last_update_time = nil_time;
 public:
-  MAX11254(spi_inst_t * spi_inst_in);
+  MAX11254(spi_inst_t * spi_inst_in, uint32_t cs_gpio_in, uint32_t rst_gpio_in, uint32_t rdy_gpio_in);
+
+  uint8_t rate = 8;
+
+  void set_rate(uint8_t rate);
+
+  void init_device();
 
   uint32_t read(uint8_t reg, int length);
   void write(uint8_t reg, uint32_t data, int length);
@@ -58,6 +69,8 @@ public:
   void conversion(uint8_t rate);
   double getVoltage(uint32_t data);
   bool isPositive(uint32_t data, int length);
+
+  void blocking_update();
 
   void update();
 };

@@ -96,29 +96,22 @@ void influxdb_try_connect() {
   }
 }
 
+static std::string header_text = "POST /api/v2/write?org=Kalogon&bucket=thermo_scope "
+                                 "HTTP/1.1\r\n"
+                                 "Host: kalogon-influxdb.cjbal.com\r\n"
+                                 "Authorization: Token 0G8WAfZ9bgdcMVd7iFvXyACM71bd6PT9pGKnmiRBPDHW7m5eTvX2oV7JFsyO2yKoQQWImKF3_RYsNG70uIwNug==\r\n";
+
 static void influxdb_send_packet(const char* body, uint32_t body_len)
 {
-  std::string header = "POST /api/v2/write?org=Kalogon&bucket=thermo_scope "
-                       "HTTP/1.1\r\n"
-                       "Host: kalogon-influxdb.cjbal.com\r\n"
-                       "Authorization: Token 0G8WAfZ9bgdcMVd7iFvXyACM71bd6PT9pGKnmiRBPDHW7m5eTvX2oV7JFsyO2yKoQQWImKF3_RYsNG70uIwNug==\r\n";
-  header += "Content-Length: " + std::to_string(body_len) + "\r\n\r\n";
 
-  if (tcp_sndbuf(influxdb_pcb) < (header.length() + body_len))
-  {
-    return;
-  }
 
-  auto error = tcp_write(influxdb_pcb, header.c_str(), header.length(), TCP_WRITE_FLAG_COPY);
-  if (error) {
-    printf("ERROR: Code: %d (tcp_send_packet :: tcp_write)\n", error);
-    return;
-  }
-  error = tcp_write(influxdb_pcb, body, body_len, 0);
-  if (error) {
-    printf("ERROR: Code: %d (tcp_send_packet :: tcp_write)\n", error);
-    return;
-  }
+  tcp_write(influxdb_pcb, header_text.c_str(), header_text.length(), 0);
+
+  std::string content_length_hdr = "Content-Length: " + std::to_string(body_len) + "\r\n\r\n";
+
+  tcp_write(influxdb_pcb, content_length_hdr.c_str(), content_length_hdr.length(), TCP_WRITE_FLAG_COPY);
+
+  tcp_write(influxdb_pcb, body, body_len, 0);
 
   tcp_output(influxdb_pcb);
 }
@@ -136,7 +129,7 @@ void influxdb_push_point(DataChannel::DataPoint &point, DataChannel *channel) {
     return;
   }
   // Assume there is enough space in tx buffer;
-  APPEND("thermo_scope %s=%f %lld\n", channel->channel_name.c_str(), point.value, point.timestamp);
+  APPEND("thermo_scope %s=%.16f %lld\n", channel->channel_name.c_str(), point.value, point.timestamp);
 
   if (influx_tx_buffer_pos > (sizeof(influx_tx_buffer) - 100))
   {

@@ -11,11 +11,6 @@
 #include "hardware/sync.h"
 #include "data_collection.hpp"
 
-uart_inst_t * uart_dev = uart1;
-
-static constexpr uint32_t tx_pin = 8;
-static constexpr uint32_t rx_pin = 9;
-
 static constexpr uint32_t max_msg_len = 256;
 
 
@@ -24,10 +19,12 @@ static RingBuffer<std::array<char, max_msg_len>> latest_full_messages{20};
 static char rx_buffer[256];
 static uint32_t rx_buffer_index = 0;
 
+static uart_inst_t * isr_uart_dev = nullptr;
+
 static void on_uart_rx()
 {
-  while (uart_is_readable(uart_dev)) {
-    auto val = rx_buffer[rx_buffer_index++] = uart_getc(uart_dev);
+  while (uart_is_readable(isr_uart_dev)) {
+    auto val = rx_buffer[rx_buffer_index++] = uart_getc(isr_uart_dev);
     if (val == '\n' || rx_buffer_index == sizeof(rx_buffer))
     {
       auto dest = latest_full_messages.push_and_return_ptr();
@@ -37,12 +34,15 @@ static void on_uart_rx()
   }
 }
 
-BS_280::BS_280()
+BS_280::BS_280(uart_inst_t * uart_dev_in, uint32_t tx_gpio_in, uint32_t rx_gpio_in):
+  uart_dev(uart_dev_in),
+  tx_gpio(tx_gpio_in),
+  rx_gpio(rx_gpio_in)
 {
   uart_init(uart_dev, 9600);
 
-  gpio_set_function(tx_pin, GPIO_FUNC_UART);
-  gpio_set_function(rx_pin, GPIO_FUNC_UART);
+  gpio_set_function(tx_gpio, GPIO_FUNC_UART);
+  gpio_set_function(rx_gpio, GPIO_FUNC_UART);
 
   uart_set_hw_flow(uart_dev, false, false);
 
@@ -50,6 +50,7 @@ BS_280::BS_280()
 
   int UART_IRQ = uart_dev == uart0 ? UART0_IRQ : UART1_IRQ;
 
+  isr_uart_dev = uart_dev;
   irq_set_exclusive_handler(UART_IRQ, on_uart_rx);
   irq_set_enabled(UART_IRQ, true);
 

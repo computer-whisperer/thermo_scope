@@ -118,8 +118,7 @@ private:
   const uint32_t max_size;
   const uint32_t index_space_max_size;
 
-  bool is_empty = true;
-  bool is_full = false;
+
 
   // The index where the next element will be inserted
   RingBufferIndex head;
@@ -127,6 +126,9 @@ private:
   RingBufferIndex tail;
 
 public:
+  bool is_empty = true;
+  bool is_full = false;
+
   explicit RingBuffer(int32_t max_size) :
           buffer_data(max_size),
           max_size(max_size),
@@ -230,6 +232,7 @@ public:
     this->is_full = false;
     this->is_empty = true;
   }
+
 };
 
 #endif //STARLING_SOFTWARE_RING_BUFFER_HPP

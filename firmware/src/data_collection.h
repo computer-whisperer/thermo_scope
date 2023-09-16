@@ -6,6 +6,7 @@
 #ifndef THERMO_SCOPE_DATA_COLLECTION_H
 #define THERMO_SCOPE_DATA_COLLECTION_H
 #include <stdint.h>
+#include <src/core/lv_obj.h>
 
 #ifdef __cplusplus
 #define EXTERNC extern "C"

@@ -9,54 +9,43 @@
 #include "hardware/spi.h"
 #include "data_collection.hpp"
 
-constexpr uint32_t max11254_rstb_pin = 0;
-constexpr uint32_t max11254_csb_pin = 1;
-constexpr uint32_t max11254_rdyb_pin = 6;
-
 #define bitRead(value, bit) (((value) >> (bit)) & 0x01)
 #define bitSet(value, bit) ((value) |= (1UL << (bit)))
 #define bitClear(value, bit) ((value) &= ~(1UL << (bit)))
 #define bitToggle(value, bit) ((value) ^= (1UL << (bit)))
 #define bitWrite(value, bit, bitvalue) (bitvalue ? bitSet(value, bit) : bitClear(value, bit))
 
-MAX11254 :: MAX11254(spi_inst_t * spi_inst_in): spi_inst(spi_inst_in)
+uint32_t rdy_gpio_ctr = 0;
+
+static absolute_time_t data_rdy_timestamps[6];
+
+static void rdy_gpio_isr(uint gpio, uint32_t event_mask)
 {
-  cs = max11254_csb_pin;
-  rst = max11254_rstb_pin;
-  rdy = max11254_rdyb_pin;
+  if (event_mask & GPIO_IRQ_EDGE_FALL) {
+    data_rdy_timestamps[rdy_gpio_ctr] = get_absolute_time();
+    rdy_gpio_ctr++;
+  }
+}
+
+MAX11254 :: MAX11254(spi_inst_t * spi_inst_in, uint32_t cs_gpio_in, uint32_t rst_gpio_in, uint32_t rdy_gpio_in):
+spi_inst(spi_inst_in),
+cs_gpio(cs_gpio_in),
+rst_gpio(rst_gpio_in),
+rdy_gpio(rdy_gpio_in)
+{
   referenceVoltage = 2.8;
 
-  gpio_init(cs);
-  gpio_set_dir(cs, GPIO_OUT);
-  gpio_put(cs, true);
+  gpio_init(cs_gpio);
+  gpio_set_dir(cs_gpio, GPIO_OUT);
+  gpio_put(cs_gpio, true);
 
-  gpio_init(rst);
-  gpio_set_dir(rst, GPIO_OUT);
-  gpio_put(rst, false);
+  gpio_init(rst_gpio);
+  gpio_set_dir(rst_gpio, GPIO_OUT);
+  gpio_put(rst_gpio, false);
 
-  gpio_init(rdy);
-  gpio_set_dir(rdy, GPIO_IN);
-
-  reset();
-
-  gpio_put(cs, false);                  // select and deselect chip to reset spi controller
-  sleep_ms(100);
-  gpio_put(cs, true);
-
-
-  calibration(2);
-
-
-  write(SEQ, 0x08, 8);
-
-  write(CTRL1, 0x22, 8);
-  write(CTRL2, 0x2C, 8);
-  write(CTRL3, 0x5C, 8);
-
-  write(GPO_DIR, 0x03, 8);
-
-  write_full(CHMAP0, 0x02 | (1 << 2), 0x02 | (2 << 2), 0x02 | (3 << 2));
-  write_full(CHMAP1, 0x02 | (4 << 2), 0x02 | (5 << 2), 0x02 | (6 << 2));
+  gpio_init(rdy_gpio);
+  gpio_set_dir(rdy_gpio, GPIO_IN);
+  gpio_set_irq_enabled_with_callback(rdy_gpio, GPIO_IRQ_EDGE_FALL, true, rdy_gpio_isr);
 
   for (uint32_t i = 0; i < 6; i++)
   {
@@ -68,9 +57,9 @@ MAX11254 :: MAX11254(spi_inst_t * spi_inst_in): spi_inst(spi_inst_in)
 
 // Reset chip to its default settings by power cycling reset pin (necessary at start)
 void MAX11254 :: reset() const {
-  gpio_put(rst, false);
+  gpio_put(rst_gpio, false);
   sleep_ms(100);
-  gpio_put(rst, true);
+  gpio_put(rst_gpio, true);
 }
 
 /** Write data to specified register
@@ -81,7 +70,7 @@ void MAX11254 :: reset() const {
 void MAX11254 :: write(uint8_t reg, uint32_t data, int length) {
   uint8_t address = MSBS | (reg << 1) | WBIT;
 
-  gpio_put(cs, false);
+  gpio_put(cs_gpio, false);
 
   spi_write_blocking(spi_inst, &address, 1);
 
@@ -90,7 +79,7 @@ void MAX11254 :: write(uint8_t reg, uint32_t data, int length) {
     spi_write_blocking(spi_inst, &data_to_send, 1);
   }
 
-  gpio_put(cs, true);
+  gpio_put(cs_gpio, true);
 }
 
 /** Read data from specified register. Returns 32bit integer.
@@ -101,7 +90,7 @@ uint32_t MAX11254 :: read(uint8_t reg, int length) {
   uint32_t data = 0;
   uint8_t address =  MSBS | (reg << 1) | RBIT;
 
-  gpio_put(cs, false);
+  gpio_put(cs_gpio, false);
   spi_write_blocking(spi_inst, &address, 1);
 
   for (int i = 0; i < length; i += 8) {
@@ -110,7 +99,7 @@ uint32_t MAX11254 :: read(uint8_t reg, int length) {
     data = (data << 8) | ret;
   }
 
-  gpio_put(cs, true);
+  gpio_put(cs_gpio, true);
   return data;
 }
 
@@ -118,7 +107,7 @@ uint32_t MAX11254 :: read(uint8_t reg, int length) {
 // It's required to run this command before reading new values from registers
 // (once each 5 registers (or less as specified in configuration))
 bool MAX11254 :: dataReady() const {
-  while (gpio_get(rdy));
+  while (gpio_get(rdy_gpio));
   return true;
 }
 
@@ -134,9 +123,9 @@ bool MAX11254 :: isPositive(uint32_t data, int length)
 * @param cmd command to be sent
 */
 void MAX11254 :: command(uint8_t cmd) {
-  gpio_put(cs, false);
+  gpio_put(cs_gpio, false);
   spi_write_blocking(spi_inst, &cmd, 1);
-  gpio_put(cs, true);
+  gpio_put(cs_gpio, true);
 }
 
 /** Performs adc calibration
@@ -239,18 +228,73 @@ void MAX11254::write_full(uint8_t reg, uint8_t reg_val_HSB, uint8_t reg_val_MSB,
   write(reg, value, 24);
 }
 
-void MAX11254::update() {
+
+void MAX11254::init_device() {
+  reset();
+
+  gpio_put(cs_gpio, false);                  // select and deselect chip to reset spi controller
+  sleep_ms(100);
+  gpio_put(cs_gpio, true);
+
+
+  calibration(2);
+
+
+  write(SEQ, 0x08, 8);
+
+  write(CTRL1, 0x22, 8);
+  write(CTRL2, 0x2C, 8);
+  write(CTRL3, 0x5C, 8);
+
+  write(GPO_DIR, 0x03, 8);
+
+  write_full(CHMAP0, 0x02 | (1 << 2), 0x02 | (2 << 2), 0x02 | (3 << 2));
+  write_full(CHMAP1, 0x02 | (4 << 2), 0x02 | (5 << 2), 0x02 | (6 << 2));
+}
+
+void MAX11254::blocking_update() {
   command(0x0F | 0x30 | 0x80);
   for (uint32_t i = 0; i < 6; i++)
   {
     for(uint32_t j = 0; j < 100; j++)
     {
-      if (!gpio_get(rdy))
+      if (!gpio_get(rdy_gpio))
       {
         break;
       }
       sleep_us(1);
     }
-    dataChannels[i]->push_new_value(getVoltage(read(DATA0 + i, 24)));
+
   }
+}
+
+
+void MAX11254::update()
+{
+  if (rdy_gpio_ctr == 6 && !needs_cmd)
+  {
+    for (uint32_t i = 0; i < 6; i++)
+    {
+      dataChannels[i]->push_new_value(getVoltage(read(DATA0 + i, 24)), data_rdy_timestamps[i]);
+    }
+    needs_cmd = true;
+  }
+
+  // recover after lockup
+  if (absolute_time_diff_us(last_update_time, get_absolute_time()) > 2000000)
+  {
+    needs_cmd = true;
+  }
+
+  if (needs_cmd)
+  {
+    command((rate&0x0F) | 0x30 | 0x80);
+    needs_cmd = false;
+    rdy_gpio_ctr = 0;
+    last_update_time = get_absolute_time();
+  }
+}
+
+void MAX11254::set_rate(uint8_t rate_in) {
+  rate = rate_in;
 }

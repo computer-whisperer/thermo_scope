@@ -29,10 +29,8 @@ pico_sdk_init()
 
 add_executable( thermo_scope
         src/main.c
-        src/ili9341.h
         src/ili9341.c
-        src/xpt2046.h
-        src/xpt2046.c
+        src/xpt2046.cpp
         src/pio_spi.c
         src/data_collection.cpp
         src/max11254.cpp
@@ -40,6 +38,8 @@ add_executable( thermo_scope
         src/bs_280.cpp
         src/system_data_sources.cpp
         src/power_status.c
+        src/bme280.cpp
+        src/i2c_bus_manager.cpp
         )
 # add pio file
 pico_generate_pio_header(thermo_scope ${CMAKE_CURRENT_LIST_DIR}/src/spi.pio)
@@ -67,6 +67,7 @@ target_link_libraries(thermo_scope
         hardware_dma
         hardware_pio
         hardware_adc
+        hardware_i2c
         pico_cyw43_arch_lwip_poll
         pico_multicore
         hardware_pwm

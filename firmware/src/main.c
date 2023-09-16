@@ -8,7 +8,7 @@
 #include "ili9341.h"
 //#include "xpt2046.h"
 #include "lvgl.h"
-#include "xpt2046.h"
+#include "xpt2046_old.h"
 #include "data_collection.h"
 #include "influxdb_export.h"
 #include "system_data_sources.h"

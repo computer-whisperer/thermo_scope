@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "pico/binary_info.h"
-#include "xpt2046.h"
+#include "xpt2046_old.h"
 #include "lvgl.h"
 #include "hardware/spi.h"
 

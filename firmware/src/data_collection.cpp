@@ -2,12 +2,12 @@
 #include <utility>
 #include <vector>
 #include <cstdlib>
+#include <src/widgets/lv_dropdown.h>
 //
 // Created by christian on 9/6/23.
 //
 
 #include "hardware/gpio.h"
-#include "xpt2046.h"
 #include "pico/time.h"
 #include "max11254.hpp"
 #include "data_collection.hpp"
@@ -15,6 +15,8 @@
 #include "influxdb_export.hpp"
 #include "bs_280.hpp"
 #include "system_data_sources.hpp"
+#include "i2c_bus_manager.hpp"
+#include "xpt2046.hpp"
 
 volatile double voltages[6];
 
@@ -52,26 +54,24 @@ void data_collection()
   gpio_set_function(SPI0_SCK, GPIO_FUNC_SPI);
   gpio_set_function(SPI0_MOSI, GPIO_FUNC_SPI);
 
-  gpio_init(17);
-  gpio_set_function(17, GPIO_FUNC_SIO);
-  gpio_set_dir(17, GPIO_OUT);
-  gpio_put(17, true);
 
-  MAX11254 max11254_driver(spi0);
-
-  xpt2046_Init(TP_LANDSCAPE, spi0);
-
-  BS_280 bs_280;
-
+  XPT2046 xpt2046(spi0, 17);
+  MAX11254 max11254_driver(spi0, 1, 0, 6);
+  BS_280 bs_280{uart1, 8, 9};
+  I2CBusManager i2c0_manager{i2c0, 21, 20};
   SystemDataSources system_data_sources;
+
+  max11254_driver.init_device();
+  max11254_driver.set_rate(8);
 
   absolute_time_t last_system_update = get_absolute_time();
 
   while (true)
   {
-    xpt2046_poll();
+    xpt2046.update();
     max11254_driver.update();
     bs_280.update();
+    i2c0_manager.update();
     if (absolute_time_diff_us(last_system_update, get_absolute_time()) > 100000)
     {
       system_data_sources.update();
@@ -139,7 +139,7 @@ void data_collection_core0_process_samples() {
     data_still_available = false;
     for (auto channel : data_channels)
     {
-      if (channel->influx_export_buffer.get_num_entries() > 0)
+      if (!channel->influx_export_buffer.is_empty)
       {
         auto data = channel->influx_export_buffer.pop_oldest();
         influxdb_push_point(data, channel);
@@ -151,9 +151,4 @@ void data_collection_core0_process_samples() {
       }
     }
   }
-}
-
-void data_collection_update_system_channels()
-{
-
 }
