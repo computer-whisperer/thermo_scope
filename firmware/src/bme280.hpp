@@ -15,9 +15,10 @@
 #include "pico/binary_info.h"
 #include "pico/stdlib.h"
 #include "data_collection.hpp"
+#include "i2c_bus_manager.hpp"
 
-class BME280 {
-  i2c_inst_t* i2c_bus;
+class BME280 : public I2CPeripheralDriver
+{
   DataChannel* humidity_data_channel;
   DataChannel* temperature_data_channel;
   DataChannel* pressure_data_channel;
@@ -25,7 +26,15 @@ class BME280 {
   absolute_time_t last_fetch_timestamp = nil_time;
 
 public:
-  BME280(i2c_inst_t* i2c_bus_in);
+  bool check_device_presence();
+
+  static constexpr uint8_t get_i2c_address(bool addr_select){
+    return addr_select? 0x77 : 0x76;
+  }
+
+  BME280(i2c_inst_t* i2c_bus_in, bool addr_select_in);
+
+  void initialize_device();
 
   struct bmp280_calib_param {
     // temperature params
@@ -63,7 +72,8 @@ public:
   int32_t bme280_convert_pressure(int32_t pressure, int32_t temp);
   int32_t bme280_convert_humidity(int32_t humidity, int32_t temp);
 
-  void bme280_get_calib_params(struct bmp280_calib_param* params) ;
+  void bme280_get_calib_params(struct bmp280_calib_param* params);
+
 
   void update();
 };

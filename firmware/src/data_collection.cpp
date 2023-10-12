@@ -13,18 +13,19 @@
 #include "data_collection.hpp"
 #include "data_collection.h"
 #include "influxdb_export.hpp"
-#include "bs_280.hpp"
 #include "system_data_sources.hpp"
 #include "i2c_bus_manager.hpp"
 #include "xpt2046.hpp"
+#include "bme280.hpp"
+#include "bmp581.hpp"
+#include "ublox_g7.hpp"
+#include "rate_meter.hpp"
 
-volatile double voltages[6];
 
 #define SPI0_SCK 2
 #define SPI0_MOSI 3
 #define SPI0_MISO 4
 
-volatile uint32_t max11254_data[6];
 
 std::vector<DataChannel*> data_channels;
 
@@ -37,28 +38,104 @@ DataChannel* data_collection_create_new_channel(std::string channel_name)
   return new_channel;
 }
 
-uint64_t data_collection_timestamp_offset = 0;
+volatile uint64_t data_collection_timestamp_offset_us = 0;
+volatile float data_collection_local_clock_correction = 0;
+uint32_t data_collection_recent_time_updates = 0;
+int32_t data_collection_time_error_since_last_sync_us = 0;
+
+volatile bool data_collection_ready_for_dormant = true;
+volatile bool data_collection_requesting_dormant = false;
+
+absolute_time_t data_collection_most_recent_gps_time_sync = nil_time;
+
+struct time_point_t {
+  uint64_t gps_time_us;
+  uint64_t local_time_us;
+};
+RingBuffer<struct time_point_t> recent_time_points(10);
+uint64_t last_gps_time_point_us = 0;
+
+static uint64_t data_collection_apply_rate_compensation(uint64_t local_time_us)
+{
+  return (uint64_t)((int64_t)local_time_us + (int64_t)(((float)local_time_us)*data_collection_local_clock_correction));
+}
+
+uint64_t data_collection_convert_to_unix_time_us(uint64_t device_clock) {
+  if (data_collection_timestamp_offset_us == 0)
+  {
+    return 0;
+  }
+  return data_collection_timestamp_offset_us + data_collection_apply_rate_compensation(device_clock);
+}
+
+uint64_t data_collection_get_unix_time_us() {
+  data_collection_convert_to_unix_time_us(to_us_since_boot(get_absolute_time()));
+}
 
 void data_collection_update_gps_time(uint64_t gps_time_us, uint64_t local_time_us) {
-  if (data_collection_timestamp_offset == 0) {
-    data_collection_timestamp_offset = (gps_time_us - local_time_us)*1000;
+  if ((gps_time_us - last_gps_time_point_us) > 60LL*1000000LL) {
+    recent_time_points.clear();
+    if (data_collection_recent_time_updates != 0)
+    {
+      data_collection_time_error_since_last_sync_us = (int64_t)data_collection_convert_to_unix_time_us(local_time_us) - (int64_t)gps_time_us;
+    }
+
+    data_collection_recent_time_updates = 0;
   }
+
+
+  struct time_point_t new_time_point = {gps_time_us, local_time_us};
+  recent_time_points.push(new_time_point);
+
+  if (recent_time_points.get_num_entries() > 5) {
+    // Get approximation of derivative
+    struct time_point_t oldest_time_point = recent_time_points.get_value_by_age((int32_t) recent_time_points.get_num_entries() - 1);
+    struct time_point_t newest_time_point = recent_time_points.get_value_by_age(0);
+    uint64_t gps_time_elapsed_us = newest_time_point.gps_time_us - oldest_time_point.gps_time_us;
+    uint64_t local_time_elapsed_us = newest_time_point.local_time_us - oldest_time_point.local_time_us;
+    float current_clock_correction = (float) (gps_time_elapsed_us - local_time_elapsed_us) / (float) local_time_elapsed_us;
+    if (current_clock_correction == 0)
+    {
+      data_collection_local_clock_correction = current_clock_correction;
+    }
+    else
+    {
+      data_collection_local_clock_correction += (current_clock_correction - data_collection_local_clock_correction)/6;
+    }
+
+
+    data_collection_recent_time_updates++;
+  }
+  data_collection_most_recent_gps_time_sync = get_absolute_time();
+
+
+  last_gps_time_point_us = gps_time_us;
+
+  data_collection_timestamp_offset_us = (gps_time_us - data_collection_apply_rate_compensation(local_time_us));
 }
+
+
 
 void data_collection()
 {
-
+  data_collection_ready_for_dormant = false;
 
   spi_init(spi0, 2500000);
   gpio_set_function(SPI0_MISO, GPIO_FUNC_SPI);
   gpio_set_function(SPI0_SCK, GPIO_FUNC_SPI);
   gpio_set_function(SPI0_MOSI, GPIO_FUNC_SPI);
 
-
   XPT2046 xpt2046(spi0, 17);
   MAX11254 max11254_driver(spi0, 1, 0, 6);
-  BS_280 bs_280{uart1, 8, 9};
+
+  UBLOX_G7 ublox_g7{uart1, 8, 9, 10};
+  ublox_g7.initialize_device();
+
   I2CBusManager i2c0_manager{i2c0, 21, 20};
+  i2c0_manager.peripheral_drivers.push_back(new BME280(i2c0, false));
+  //I2CBusManager i2c1_manager{i2c1, 19, 18};
+  //i2c1_manager.peripheral_drivers.push_back(new BMP581(i2c1, false));
+  //i2c1_manager.peripheral_drivers.push_back(new BMP581(i2c1, true));
   SystemDataSources system_data_sources;
 
   max11254_driver.init_device();
@@ -68,15 +145,30 @@ void data_collection()
 
   while (true)
   {
-    xpt2046.update();
+    // Dormant mode concerns
+    if (data_collection_requesting_dormant)
+    {
+      ublox_g7.on_enter_dormant();
+      data_collection_ready_for_dormant = true;
+      while (data_collection_requesting_dormant)
+      {
+        sleep_ms(10);
+      }
+      ublox_g7.on_exit_dormant();
+      data_collection_ready_for_dormant = false;
+    }
+
+    ublox_g7.update();
+    //xpt2046.update();
     max11254_driver.update();
-    bs_280.update();
     i2c0_manager.update();
+    //i2c1_manager.update();
     if (absolute_time_diff_us(last_system_update, get_absolute_time()) > 100000)
     {
       system_data_sources.update();
       last_system_update = get_absolute_time();
     }
+    sleep_ms(1);
   }
 }
 
@@ -136,12 +228,18 @@ void data_collection_core0_process_samples() {
   bool data_still_available = true;
   while (data_still_available && influxdb_can_push_point())
   {
+    if (data_collection_timestamp_offset_us == 0)
+    {
+      break;
+      // Wait for timestamp offset from GPS
+    }
     data_still_available = false;
     for (auto channel : data_channels)
     {
       if (!channel->influx_export_buffer.is_empty)
       {
         auto data = channel->influx_export_buffer.pop_oldest();
+        data.timestamp_us = data_collection_convert_to_unix_time_us(data.timestamp_us);
         influxdb_push_point(data, channel);
         if (!influxdb_can_push_point())
         {

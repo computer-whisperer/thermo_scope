@@ -8,7 +8,7 @@
 #include "pico/binary_info.h"
 #include "pico/stdlib.h"
 
-#define ADDR _u(0x76)
+#define REG_ID _u(0xD0)
 
 // hardware registers
 #define REG_CONFIG _u(0xF5)
@@ -61,8 +61,8 @@ void BME280::bme280_read_raw(int32_t* temp, int32_t* pressure, int32_t* humidity
 
   uint8_t buf[8];
   uint8_t reg = REG_PRESSURE_MSB;
-  i2c_write_blocking(i2c_bus, ADDR, &reg, 1, true);  // true to keep master control of bus
-  i2c_read_blocking(i2c_bus, ADDR, buf, 8, false);  // false - finished with bus
+  i2c_write_blocking(i2c_bus, i2c_addr, &reg, 1, true);  // true to keep master control of bus
+  i2c_read_blocking(i2c_bus, i2c_addr, buf, 8, false);  // false - finished with bus
 
   // store the 20 bit read in a 32 bit signed integer for conversion
   *pressure = (buf[0] << 12) | (buf[1] << 4) | (buf[2] >> 4);
@@ -73,7 +73,7 @@ void BME280::bme280_read_raw(int32_t* temp, int32_t* pressure, int32_t* humidity
 void BME280::bme280_reset() {
   // reset the device with the power-on-reset procedure
   uint8_t buf[2] = { REG_RESET, 0xB6 };
-  i2c_write_blocking(i2c_bus, ADDR, buf, 2, false);
+  i2c_write_blocking(i2c_bus, i2c_addr, buf, 2, false);
 }
 
 // intermediate function that calculates the fine resolution temperature
@@ -147,9 +147,9 @@ void BME280::bme280_get_calib_params(struct bmp280_calib_param* params) {
 
   uint8_t buf[26] = { 0 };
   uint8_t reg = REG_DIG_T1_LSB;
-  i2c_write_blocking(i2c_bus, ADDR, &reg, 1, true);  // true to keep master control of bus
+  i2c_write_blocking(i2c_bus, i2c_addr, &reg, 1, true);  // true to keep master control of bus
   // read in one go as register addresses auto-increment
-  i2c_read_blocking(i2c_bus, ADDR, buf, 26, false);  // false, we're done reading
+  i2c_read_blocking(i2c_bus, i2c_addr, buf, 26, false);  // false, we're done reading
 
   // store these in a struct for later use
   params->dig_t1 = (uint16_t)(buf[1] << 8) | buf[0];
@@ -169,9 +169,9 @@ void BME280::bme280_get_calib_params(struct bmp280_calib_param* params) {
   params->dig_H1 = buf[25];
 
   reg = 0xE1;
-  i2c_write_blocking(i2c_bus, ADDR, &reg, 1, true);  // true to keep master control of bus
+  i2c_write_blocking(i2c_bus, i2c_addr, &reg, 1, true);  // true to keep master control of bus
   // read in one go as register addresses auto-increment
-  i2c_read_blocking(i2c_bus, ADDR, buf, 8, false);  // false, we're done reading
+  i2c_read_blocking(i2c_bus, i2c_addr, buf, 8, false);  // false, we're done reading
 
   params->dig_H2 = (int16_t) (buf[0] | (buf[1] << 8));
   params->dig_H3 = (int8_t) buf[2];
@@ -180,29 +180,12 @@ void BME280::bme280_get_calib_params(struct bmp280_calib_param* params) {
   params->dig_H6 = (int8_t) buf[7];
 }
 
-BME280::BME280(i2c_inst_t* i2c_bus_in) : i2c_bus(i2c_bus_in) {
+BME280::BME280(i2c_inst_t* i2c_bus_in, bool addr_select_in) :
+        I2CPeripheralDriver(i2c_bus_in, get_i2c_address(addr_select_in))
+{
   pressure_data_channel = data_collection_create_new_channel("BME280_Pressure");
   temperature_data_channel = data_collection_create_new_channel("BME280_Temperature");
   humidity_data_channel = data_collection_create_new_channel("BME280_Humidity");
-
-  // use the "handheld device dynamic" optimal setting (see datasheet)
-  uint8_t buf[2];
-
-  // 500ms sampling time, x16 filter
-  const uint8_t reg_config_val = ((0x04 << 5) | (0x05 << 2)) & 0xFC;
-
-  // send register number followed by its corresponding value
-  buf[0] = REG_CONFIG;
-  buf[1] = reg_config_val;
-  i2c_write_blocking(i2c_bus, ADDR, buf, 2, false);
-
-  // osrs_t x1, osrs_p x4, normal mode operation
-  const uint8_t reg_ctrl_meas_val = (0x01 << 5) | (0x03 << 2) | (0x03);
-  buf[0] = REG_CTRL_MEAS;
-  buf[1] = reg_ctrl_meas_val;
-  i2c_write_blocking(i2c_bus, ADDR, buf, 2, false);
-
-  bme280_get_calib_params(&cal_params);
 }
 
 void BME280::update() {
@@ -220,4 +203,34 @@ void BME280::update() {
     humidity_data_channel->push_new_value(humidity);
     last_fetch_timestamp = get_absolute_time();
   }
+}
+
+bool BME280::check_device_presence(){
+  uint8_t reg = REG_ID;
+  i2c_write_blocking(i2c_bus, i2c_addr, &reg, 1, true);
+  uint8_t data;
+  i2c_read_blocking(i2c_bus, i2c_addr, &data, 1, false);
+  is_present = (data == 0x60) || (data == 0x61);
+  return is_present;
+}
+
+void BME280::initialize_device() {
+  // use the "handheld device dynamic" optimal setting (see datasheet)
+  uint8_t buf[2];
+
+  // 500ms sampling time, x16 filter
+  const uint8_t reg_config_val = ((0x04 << 5) | (0x05 << 2)) & 0xFC;
+
+  // send register number followed by its corresponding value
+  buf[0] = REG_CONFIG;
+  buf[1] = reg_config_val;
+  i2c_write_blocking(i2c_bus, i2c_addr, buf, 2, false);
+
+  // osrs_t x1, osrs_p x4, normal mode operation
+  const uint8_t reg_ctrl_meas_val = (0x01 << 5) | (0x03 << 2) | (0x03);
+  buf[0] = REG_CTRL_MEAS;
+  buf[1] = reg_ctrl_meas_val;
+  i2c_write_blocking(i2c_bus, i2c_addr, buf, 2, false);
+
+  bme280_get_calib_params(&cal_params);
 }

@@ -49,8 +49,8 @@ rdy_gpio(rdy_gpio_in)
 
   for (uint32_t i = 0; i < 6; i++)
   {
-    char name[80];
-    sprintf(name, "MAX11254_Channel_%lu", i);
+    char name[25];
+    snprintf(name, sizeof(name), "MAX11254_Channel_%lu", i);
     dataChannels.push_back(data_collection_create_new_channel(name));
   }
 }

@@ -1,10 +1,9 @@
-#include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 #include "hardware/dma.h"
 #include "hardware/pio.h"
 #include "hardware/pwm.h"
-#include "ili9341.h"
+#include "ili9341.hpp"
 #include "lvgl.h"
 
 // SPI Defines
@@ -72,7 +71,7 @@ uint slice_num;
 typedef struct {
   uint8_t cmd;
   uint8_t dat[16];
-  uint datLen;
+  uint32_t datLen;
   uint32_t sleep;
 } ili9341_ini_str_t;
 
@@ -113,17 +112,17 @@ ili9341_ini_str_t lcd_ini_str[] = {
 
 struct
 {
-  uint width;
-  uint height;
+  uint16_t width;
+  uint16_t height;
 } ili9341_resolution;
 
 int dmaChannel;
 dma_channel_config c;
 
-void ili9341_Init(uint rot)
+void ili9341_Init(uint16_t rot)
 {
   // // Get a free channel, panic() if there are none
-  int chan = dma_claim_unused_channel(true);
+  dmaChannel = dma_claim_unused_channel(true);
   c = dma_channel_get_default_config(dmaChannel);
   channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
   channel_config_set_dreq(&c, DREQ_SPI1_TX);
@@ -141,13 +140,13 @@ void ili9341_Init(uint rot)
   // Chip select is active-low, so we'll initialise it to a driven-high state
   gpio_init(LCD_CS);
   gpio_set_dir(LCD_CS, GPIO_OUT);
-  gpio_put(LCD_CS, 1);
+  gpio_put(LCD_CS, true);
   gpio_init(LCD_DC);
   gpio_set_dir(LCD_DC, GPIO_OUT);
-  gpio_put(LCD_DC, 1);
+  gpio_put(LCD_DC, true);
   gpio_init(LCD_RESET);
   gpio_set_dir(LCD_RESET, GPIO_OUT);
-  gpio_put(LCD_RESET, 1);
+  gpio_put(LCD_RESET, true);
 
   //gpio_init(LCD_LED);
   //gpio_set_dir(LCD_LED, GPIO_OUT);
@@ -169,24 +168,25 @@ void ili9341_Init(uint rot)
 
   // initialize LCD
   ili9341_HardReset();
+  /*
   ili9341_SstLED(10);
   ili9341_SendInitStr();
   ili9341_setRotate(rot);
   ili9341_SetWindow(0, 0, ili9341_resolution.width, ili9341_resolution.width);
-  ili9341_SstLED(100);
+  ili9341_SstLED(0);*/
 }
 
 void ili9341_HardReset()
 {
-  gpio_put(LCD_RESET, 1);
+  gpio_put(LCD_RESET, true);
   sleep_ms(10);
-  gpio_put(LCD_RESET, 0);
+  gpio_put(LCD_RESET, false);
   sleep_ms(100);
-  gpio_put(LCD_RESET, 1);
+  gpio_put(LCD_RESET, true);
   sleep_ms(100);
 }
 
-void ili9341_SstLED(uint parcent)
+void ili9341_SstLED(uint16_t parcent)
 {
   if (parcent > 100)
   {
@@ -197,7 +197,7 @@ void ili9341_SstLED(uint parcent)
 
 void ili9341_SendInitStr()
 {
-  ili9341_SetCS(0);
+  ili9341_SetCS(false);
   uint i = 0;
   while(lcd_ini_str[i].cmd != 0x00)
   {
@@ -207,12 +207,12 @@ void ili9341_SendInitStr()
     dat = &(lcd_ini_str[i].dat[0]);
     uint32_t slp = lcd_ini_str[i].sleep;
 
-    ili9341_SetDC(0);
+    ili9341_SetDC(false);
     spi_write_blocking(LCD_SPI_PORT, &cmd, 1);
 
     if(datLen > 0)
     {
-      ili9341_SetDC(1);
+      ili9341_SetDC(true);
       spi_write_blocking(LCD_SPI_PORT, dat, datLen);
     }
     if(slp > 0)
@@ -221,7 +221,7 @@ void ili9341_SendInitStr()
     }
     i++;
   }
-  ili9341_SetCS(1);
+  ili9341_SetCS(true);
 }
 
 void ili9341_SetCS(bool val)
@@ -242,17 +242,17 @@ void ili9341_SetDC(bool val)
   asm volatile("nop\n");
 }
 
-void ili9341_SendData(uint8_t cmd, uint8_t *data, uint length)
+void ili9341_SendData(uint8_t cmd, uint8_t *data, uint16_t length)
 {
-  ili9341_SetCS(0);
-  ili9341_SetDC(0);
+  ili9341_SetCS(false);
+  ili9341_SetDC(false);
   spi_write_blocking(LCD_SPI_PORT, &cmd, 1);
-  ili9341_SetDC(1);
+  ili9341_SetDC(true);
   spi_write_blocking(LCD_SPI_PORT, data, length);
-  ili9341_SetCS(1);
+  ili9341_SetCS(true);
 }
 
-void ili9341_setRotate(uint rot)
+void ili9341_setRotate(uint16_t rot)
 {
   uint8_t cmd = 0x36;
   uint8_t r;
@@ -288,7 +288,7 @@ void ili9341_setRotate(uint rot)
   ili9341_SendData(cmd, &r, 1);
 }
 
-void ili9341_SetWindow(uint x, uint y, uint w, uint h)
+void ili9341_SetWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
 {
   /* CASET */
   uint8_t cmd = 0x2A;
@@ -319,16 +319,15 @@ void lcd_Flash_CB(struct _lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_c
   /*
    *  transfer pixel data via DMA function
    */
-  while(1)
+  while(true)
   {
-    bool a = dma_channel_is_busy(dmaChannel);
-    if(a == false)  break;
+    if(!dma_channel_is_busy(dmaChannel))  break;
   }
   ili9341_SetWindow(x1, y1, lv_area_get_width(area), lv_area_get_height(area));
-  ili9341_SetCS(0);
-  ili9341_SetDC(0);
+  ili9341_SetCS(false);
+  ili9341_SetDC(false);
   spi_write_blocking(LCD_SPI_PORT, &cmd, 1);  /* RAMWR **/
-  ili9341_SetDC(1);
+  ili9341_SetDC(true);
   /*
    *  transfer pixel data via SPI function
    */
@@ -357,10 +356,10 @@ void lcd_Send_Color_DMA(void * buf, uint16_t length)
 
 lv_coord_t lcd_Get_Width()
 {
-  return(ili9341_resolution.width);
+  return(lv_coord_t)(ili9341_resolution.width);
 }
 
 lv_coord_t lcd_Get_Height()
 {
-  return(ili9341_resolution.height);
+  return(lv_coord_t)(ili9341_resolution.height);
 }

@@ -10,7 +10,19 @@ set(CMAKE_CXX_STANDARD 17)
 set(PICO_SDK_PATH ../libs/pico-sdk)
 
 set(PICO_BOARD pico_w CACHE STRING "Board type")
-set(PICO_DEOPTIMIZED_DEBUG=1)
+set(PICO_DEOPTIMIZED_DEBUG 1)
+
+add_compile_definitions(PICO_USE_STACK_GUARDS=1)
+add_compile_definitions(SYS_CLK_KHZ=15306)
+add_compile_definitions(PLL_COMMON_REFDIV=2)
+add_compile_definitions(PLL_SYS_VCO_FREQ_KHZ=750*1000)
+add_compile_definitions(PLL_SYS_POSTDIV1=7)
+add_compile_definitions(PLL_SYS_POSTDIV2=7)
+add_compile_definitions(USB_CLK_KHZ=15306)
+add_compile_definitions(PLL_USB_VCO_FREQ_KHZ=750*1000)
+add_compile_definitions(PLL_USB_POSTDIV1=7)
+add_compile_definitions(PLL_USB_POSTDIV2=7)
+
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(libs/pico-sdk/external/pico_sdk_import.cmake)
@@ -29,7 +41,7 @@ pico_sdk_init()
 
 add_executable( thermo_scope
         src/main.c
-        src/ili9341.c
+        src/ili9341.cpp
         src/xpt2046.cpp
         src/pio_spi.c
         src/data_collection.cpp
@@ -39,7 +51,12 @@ add_executable( thermo_scope
         src/system_data_sources.cpp
         src/power_status.c
         src/bme280.cpp
+        src/bmp581.cpp
         src/i2c_bus_manager.cpp
+        src/ublox_g7.cpp
+        src/display.cpp
+        src/power.cpp
+        src/cyw43_shim.c
         )
 # add pio file
 pico_generate_pio_header(thermo_scope ${CMAKE_CURRENT_LIST_DIR}/src/spi.pio)

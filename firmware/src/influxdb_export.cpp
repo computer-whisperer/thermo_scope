@@ -7,6 +7,7 @@
 #include "lwip/dns.h"
 #include "lwip/tcp.h"
 #include "cyw43.h"
+#include "power.h"
 
 std::string influxdb_url = "kalogon-influxdb.cjbal.com";
 
@@ -118,7 +119,7 @@ static void influxdb_send_packet(const char* body, uint32_t body_len)
 
 bool influxdb_can_push_point()
 {
-  return (influxdb_connection_state == InfluxDBConnectionState_CONNECTED && influx_buffer_ready);
+  return (influxdb_connection_state == InfluxDBConnectionState_CONNECTED && influx_buffer_ready && power_wifi_power_state);
 }
 
 #define APPEND(...) influx_tx_buffer_pos += snprintf(&influx_tx_buffer[influx_tx_buffer_pos], sizeof(influx_tx_buffer) - influx_tx_buffer_pos, __VA_ARGS__)
@@ -129,7 +130,7 @@ void influxdb_push_point(DataChannel::DataPoint &point, DataChannel *channel) {
     return;
   }
   // Assume there is enough space in tx buffer;
-  APPEND("thermo_scope %s=%.16f %lld\n", channel->channel_name.c_str(), point.value, point.timestamp);
+  APPEND("thermo_scope %s=%.16f %lld\n", channel->channel_name.c_str(), point.value, point.timestamp_us * 1000);
 
   if (influx_tx_buffer_pos > (sizeof(influx_tx_buffer) - 100))
   {

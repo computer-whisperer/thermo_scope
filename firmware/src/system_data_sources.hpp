@@ -11,6 +11,7 @@ class SystemDataSources {
   DataChannel* sys_time_channel;
   DataChannel* battery_voltage_channel;
   DataChannel* rp2040_temp_channel;
+  DataChannel* heap_space_free;
 
   public:
   SystemDataSources();

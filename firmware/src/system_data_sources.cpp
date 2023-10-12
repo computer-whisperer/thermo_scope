@@ -2,27 +2,32 @@
 // Created by christian on 9/15/23.
 //
 
+#include <malloc.h>
 #include "system_data_sources.hpp"
 #include "system_data_sources.h"
 #include "power_status.h"
 #include "hardware/adc.h"
 
 SystemDataSources::SystemDataSources() {
-  sys_time_channel = data_collection_create_new_channel("system_time");
+  sys_time_channel = data_collection_create_new_channel("system_time_drift");
   battery_voltage_channel = data_collection_create_new_channel("battery_voltage");
   rp2040_temp_channel = data_collection_create_new_channel("rp2040_temp");
+  heap_space_free = data_collection_create_new_channel("heap_space_free");
 }
 
 static float last_pushed_vbat = 0;
-static float vbat = 0;
+static volatile float vbat = 0;
 
 static float last_pushed_rp2040_temp = 0;
-static float rp2040_temp = 0;
+static volatile float rp2040_temp = 0;
 
 static absolute_time_t last_vbat_read = nil_time;
 
+static int32_t prev_accumulated_error = 0;
+
+
 void SystemDataSources::update() {
-  sys_time_channel->push_new_value((double)to_us_since_boot(get_absolute_time()));
+  //sys_time_channel->push_new_value((double)to_us_since_boot(get_absolute_time()));
   if (vbat != last_pushed_vbat) {
     battery_voltage_channel->push_new_value(vbat);
     last_pushed_vbat = vbat;
@@ -30,6 +35,13 @@ void SystemDataSources::update() {
   if (rp2040_temp!= last_pushed_rp2040_temp) {
     rp2040_temp_channel->push_new_value(rp2040_temp);
     last_pushed_rp2040_temp = rp2040_temp;
+  }
+  auto malloc_info = mallinfo();
+  heap_space_free->push_new_value((double)malloc_info.fordblks);
+
+  if (data_collection_time_error_since_last_sync_us != prev_accumulated_error)
+  {
+    sys_time_channel->push_new_value((double)data_collection_time_error_since_last_sync_us);
   }
 }
 
@@ -56,9 +68,9 @@ float read_onboard_temperature(const char unit) {
 }
 
 void system_data_sources_core0_update() {
-  if (absolute_time_diff_us(last_vbat_read, get_absolute_time()) > 1000000)
+  if (absolute_time_diff_us(last_vbat_read, get_absolute_time()) > 100000000)
   {
-    power_voltage(&vbat);
+    power_voltage((float*)&vbat);
     rp2040_temp = read_onboard_temperature('C');
     last_vbat_read = get_absolute_time();
   }

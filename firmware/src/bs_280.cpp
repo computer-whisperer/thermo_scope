@@ -11,12 +11,12 @@
 #include "hardware/sync.h"
 #include "data_collection.hpp"
 
-static constexpr uint32_t max_msg_len = 256;
+static constexpr uint32_t max_msg_len = 100;
 
 
 static RingBuffer<std::array<char, max_msg_len>> latest_full_messages{20};
 
-static char rx_buffer[256];
+static char rx_buffer[max_msg_len];
 static uint32_t rx_buffer_index = 0;
 
 static uart_inst_t * isr_uart_dev = nullptr;
