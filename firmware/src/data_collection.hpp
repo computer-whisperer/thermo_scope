@@ -28,11 +28,11 @@ public:
     double value;
     uint64_t timestamp_us;
   };
-  RingBuffer<DataPoint> influx_export_buffer{40};
+  RingBuffer<DataPoint> influx_export_buffer{200};
   RingBuffer<float> graph_downsample_buffer{200};
   std::string channel_name;
   explicit DataChannel (std::string channel_name_in) : channel_name(channel_name_in) {
-    queue_init(&intercore_data_queue, sizeof(struct DataPoint), 40);
+    queue_init(&intercore_data_queue, sizeof(struct DataPoint), 100);
   }
 
   void push_new_value (double new_value) {

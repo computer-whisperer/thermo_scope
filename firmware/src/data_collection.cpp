@@ -245,7 +245,7 @@ void data_collection_core0_process_samples() {
         {
           break;
         }
-        data_still_available |= (channel->influx_export_buffer.get_num_entries() > 0);
+        data_still_available |= (!channel->influx_export_buffer.is_empty);
       }
     }
   }

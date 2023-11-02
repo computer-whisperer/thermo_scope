@@ -28,7 +28,7 @@ bool power_wifi_power_state = false;
 void power_up_wifi()
 {
 
-  cyw43_pm_value(CYW43_PM2_POWERSAVE_MODE, 2000, 1, 1, 10);
+  cyw43_pm_value(CYW43_NO_POWERSAVE_MODE, 2000, 1, 1, 10);
 
   cyw43_arch_enable_sta_mode();
   cyw43_arch_wifi_connect_async("KalogonProdTest", "fwgnjEDjp7jd4pm9", CYW43_AUTH_WPA2_AES_PSK);
@@ -213,28 +213,29 @@ void power_main_loop()
   gpio_init(debug_gpio);
   gpio_set_dir(debug_gpio, GPIO_OUT);
 
-  vreg_set_voltage(VREG_VOLTAGE_0_95);
+  //vreg_set_voltage(VREG_VOLTAGE_0_95);
 
-
+/*
   reset_block(
           RESETS_RESET_USBCTRL_BITS |
           RESETS_RESET_PWM_BITS |
           RESETS_RESET_RTC_BITS |
           RESETS_RESET_PIO0_BITS |
           RESETS_RESET_UART0_BITS); // hold unneeded peripherals in reset
-  configure_clocks(CLOCK_CONFIGURATION_LOW_POWER);
+          */
+  //configure_clocks(CLOCK_CONFIGURATION_LOW_POWER);
 
-  //adc_init();
-  //adc_set_temp_sensor_enabled(true);
+  adc_init();
+  adc_set_temp_sensor_enabled(true);
 
 
-  //cyw43_arch_init_with_country(CYW43_COUNTRY_USA);
+  cyw43_arch_init_with_country(CYW43_COUNTRY_USA);
 
-  //multicore_launch_core1(data_collection);
+  multicore_launch_core1(data_collection);
 
   bool display_power_state = false;
 
-  bool enter_dormant_when_can = true;
+  bool enter_dormant_when_can = false;
 
   gpio_init(power_button_gpio);
   gpio_set_dir(power_button_gpio, GPIO_IN);
@@ -244,8 +245,8 @@ void power_main_loop()
 
   sleep_ms(100);
 
-  //power_up_wifi();
-  //display_power_state = true;
+  power_up_wifi();
+  display_power_state = true;
 
   Display display;
 
@@ -282,7 +283,7 @@ void power_main_loop()
 
     //display.update();
 
-    if (absolute_time_diff_us(power_button_time, get_absolute_time()) > 1000000)
+    if (false && absolute_time_diff_us(power_button_time, get_absolute_time()) > 1000000)
     {
       if (!gpio_get(power_button_gpio))
       {
@@ -310,8 +311,8 @@ void power_main_loop()
       }
     }
 
-    //system_data_sources_core0_update();
+    system_data_sources_core0_update();
 
-    sleep_ms(100);
+    //sleep_ms(10);
   }
 }

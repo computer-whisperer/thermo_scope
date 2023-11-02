@@ -7,9 +7,11 @@
 #include "hardware/adc.h"
 #include "power.h"
 #include <pico/cyw43_arch.h>
+#include <malloc.h>
 
 int main()
 {
+
   power_main_loop();
   return 0;
 }
