@@ -13,3 +13,6 @@
 [submodule "firmware/libs/cw_pico_library"]
 	path = firmware/libs/cw_pico_library
 	url = git@github.com:computer-whisperer/cw_pico_library.git
+[submodule "firmware/libs/TFT_eSPI"]
+	path = firmware/libs/TFT_eSPI
+	url = https://github.com/Bodmer/TFT_eSPI

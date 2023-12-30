@@ -49,10 +49,8 @@ add_executable( thermo_scope
         src/system_data_sources.cpp
         src/power_status.c
         src/display.cpp
-        ${CWLIB_DIR}/drivers/ili9341.cpp
-        ${CWLIB_DIR}/drivers/max11254.cpp
-        ${CWLIB_DIR}/drivers/bme280.cpp
-        ${CWLIB_DIR}/drivers/bmp581.cpp
+        ${CWLIB_DIR}/drivers/tft_espi.cpp
+        ${CWLIB_DIR}/drivers/st7789v2.cpp
         ${CWLIB_DIR}/drivers/bmp585.cpp
         ${CWLIB_DIR}/drivers/sht45.cpp
         ${CWLIB_DIR}/drivers/tsys01.cpp
@@ -90,6 +88,7 @@ target_include_directories(thermo_scope PRIVATE
         )
 
 target_include_directories(thermo_scope PRIVATE
+        libs/TFT_eSPI/TFT_Drivers/
         ${UZLIB_DIR}/src/
         ${CWLIB_DIR}/clients/
         ${CWLIB_DIR}/drivers/

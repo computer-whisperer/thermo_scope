@@ -9,10 +9,9 @@
 class Display
 {
 private:
-  lv_obj_t * chart_obj = nullptr;
-  int16_t chart_data[200];
-  lv_obj_t * chart_value_label_obj = nullptr;
-  lv_obj_t * wifi_state_label_obj = nullptr;
+  lv_obj_t * press_label_obj = nullptr;
+  lv_obj_t * temp_label_obj = nullptr;
+  lv_obj_t * humid_label_obj = nullptr;
 public:
   Display();
   void init();

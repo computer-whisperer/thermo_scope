@@ -198,14 +198,14 @@ int main()
 
     if (display_power_state)
     {
-      ili9341_SstLED(100);
+      //ili9341_SstLED(100);
     }
     else
     {
-      ili9341_SstLED(0);
+      //ili9341_SstLED(0);
     }
 
-    //display.update();
+    display.update();
 
     if (absolute_time_diff_us(power_button_time, get_absolute_time()) > 1000000)
     {
