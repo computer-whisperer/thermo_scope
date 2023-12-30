@@ -51,6 +51,7 @@ add_executable( thermo_scope
         src/display.cpp
         ${CWLIB_DIR}/drivers/tft_espi.cpp
         ${CWLIB_DIR}/drivers/st7789v2.cpp
+        ${CWLIB_DIR}/drivers/gc9a01.cpp
         ${CWLIB_DIR}/drivers/bmp585.cpp
         ${CWLIB_DIR}/drivers/sht45.cpp
         ${CWLIB_DIR}/drivers/tsys01.cpp
