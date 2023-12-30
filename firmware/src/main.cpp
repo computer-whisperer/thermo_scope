@@ -1,46 +1,47 @@
-//
-// Created by christian on 9/17/23.
-//
 
-#include <cstdint>
-#include "power.h"
-#include "hardware/gpio.h"
-#include "cyw43_ll.h"
-#include "data_collection.h"
-#include "pico/cyw43_arch.h"
-#include "system_data_sources.h"
-#include "ili9341.hpp"
-#include "influxdb_export.h"
-#include "display.hpp"
-#include "hardware/structs/clocks.h"
-#include "hardware/clocks.h"
-#include "hardware/resets.h"
-#include "hardware/pll.h"
+#include <data_collection.hpp>
+#include <display.hpp>
+#include <ili9341.hpp>
+#include <stdio.h>
+#include "pico/stdlib.h"
 #include "pico/multicore.h"
-#include "hardware/xosc.h"
-#include "data_collection.hpp"
+#include "hardware/spi.h"
+#include "data_collection.h"
 #include "hardware/adc.h"
-#include "hardware/structs/rosc.h"
-#include "hardware/vreg.h"
+#include <pico/cyw43_arch.h>
+#include <malloc.h>
+#include <system_data_sources.h>
+#include <hardware/clocks.h>
+#include <hardware/pll.h>
+#include <hardware/xosc.h>
+#include <hardware/regs/clocks.h>
+
+#include "influxdb_client.hpp"
+#include "ntp_client.hpp"
+#include "secrets.hpp"
 
 bool power_wifi_power_state = false;
 
+InfluxDBClient influxdb_client{"general_telemetry"};
+
+NTPClient ntp_client;
+
 void power_up_wifi()
 {
-
   cyw43_pm_value(CYW43_NO_POWERSAVE_MODE, 2000, 1, 1, 10);
 
   cyw43_arch_enable_sta_mode();
-  cyw43_arch_wifi_connect_async("KalogonProdTest", "fwgnjEDjp7jd4pm9", CYW43_AUTH_WPA2_AES_PSK);
+  cyw43_arch_wifi_connect_async("KalogonProdTest", kalogon_prod_test_password, CYW43_AUTH_WPA2_AES_PSK);
   power_wifi_power_state = true;
+  influxdb_client.connect();
 }
 
 void power_down_wifi()
 {
+  influxdb_client.disconnect();
   cyw43_arch_disable_sta_mode();
   power_wifi_power_state = false;
 }
-
 
 uint f_pll_sys;
 uint f_pll_usb;
@@ -68,7 +69,6 @@ uint32_t power_button_gpio = 27;
 enum CLOCK_CONFIGURATION {
   CLOCK_CONFIGURATION_DEFAULT = 0,
   CLOCK_CONFIGURATION_HIGH_SPEED = 1,
-  CLOCK_CONFIGURATION_LOW_POWER = 2,
   CLOCK_CONFIGURATION_DORMANT_READY = 3
 };
 
@@ -78,35 +78,12 @@ void configure_clocks(enum CLOCK_CONFIGURATION config)
   uint32_t rosc_speed = frequency_count_khz(CLOCKS_FC0_SRC_VALUE_ROSC_CLKSRC);
   switch (config)
   {
-    case CLOCK_CONFIGURATION_LOW_POWER:
-    case CLOCK_CONFIGURATION_DEFAULT:
-      pll_init(pll_sys, PLL_COMMON_REFDIV, PLL_SYS_VCO_FREQ_KHZ * KHZ, PLL_SYS_POSTDIV1, PLL_SYS_POSTDIV2);
-      sys_clk_freq = SYS_CLK_KHZ * KHZ;
-
-      // Slow down sys
-      clock_configure(clk_sys,
-                      CLOCKS_CLK_SYS_CTRL_SRC_VALUE_CLKSRC_CLK_SYS_AUX,
-                      CLOCKS_CLK_SYS_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
-                      sys_clk_freq,
-                      sys_clk_freq);
-      clock_configure(clk_adc,
-                      0, // No GLMUX
-                      CLOCKS_CLK_ADC_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
-                      sys_clk_freq,
-                      sys_clk_freq);
-      clock_configure(clk_peri,
-                      0,
-                      CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS,
-                      sys_clk_freq,
-                      sys_clk_freq);
-      break;
     case CLOCK_CONFIGURATION_DORMANT_READY:
       {
-        uint32_t target_sys_clk = 100;
+        uint32_t target_sys_clk = 2000;
 
         // switch sys to running directly from xosc
-        if (true)
-        {
+        if (false) {
           clock_configure(clk_sys,
                           CLOCKS_CLK_SYS_CTRL_SRC_VALUE_CLKSRC_CLK_SYS_AUX,
                           CLOCKS_CLK_SYS_CTRL_AUXSRC_VALUE_ROSC_CLKSRC,
@@ -118,9 +95,7 @@ void configure_clocks(enum CLOCK_CONFIGURATION config)
                           rosc_speed * KHZ,
                           target_sys_clk * KHZ);
           xosc_disable();
-        }
-        else
-        {
+        } else {
           clock_configure(clk_sys,
                           CLOCKS_CLK_SYS_CTRL_SRC_VALUE_CLKSRC_CLK_SYS_AUX,
                           CLOCKS_CLK_SYS_CTRL_AUXSRC_VALUE_XOSC_CLKSRC,
@@ -128,66 +103,26 @@ void configure_clocks(enum CLOCK_CONFIGURATION config)
                           target_sys_clk * KHZ);
         }
       }
-      //clock_stop(clk_gpout0);
-      //clock_stop(clk_gpout1);
-      //clock_stop(clk_gpout2);
-      //clock_stop(clk_gpout3);
-      clock_stop(clk_adc);
-      clock_stop(clk_peri);
-      clock_stop(clk_usb);
-      clock_stop(clk_rtc);
-      pll_deinit(pll_usb);
-      pll_deinit(pll_sys);
-
-      reset_block(
-              RESETS_RESET_USBCTRL_BITS |
-              RESETS_RESET_UART0_BITS |
-              RESETS_RESET_UART1_BITS |
-              RESETS_RESET_SPI0_BITS |
-              RESETS_RESET_SPI1_BITS |
-              RESETS_RESET_RTC_BITS |
-              RESETS_RESET_PWM_BITS |
-              RESETS_RESET_PLL_USB_BITS |
-              RESETS_RESET_PLL_SYS_BITS |
-              RESETS_RESET_PIO0_BITS |
-              RESETS_RESET_PIO1_BITS |
-              RESETS_RESET_ADC_BITS
-      );
+      //pll_deinit(pll_usb);
+      //pll_deinit(pll_sys);
 
       break;
     case CLOCK_CONFIGURATION_HIGH_SPEED:
-      pll_init(pll_sys, 1, (1500 * KHZ), 6, 2);
+      pll_init(pll_sys, 1, (1500 * 1000 * KHZ), 6, 2);
       sys_clk_freq = 125000 * KHZ;
 
-      // Slow down sys
       clock_configure(clk_sys,
                       CLOCKS_CLK_SYS_CTRL_SRC_VALUE_CLKSRC_CLK_SYS_AUX,
                       CLOCKS_CLK_SYS_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
                       sys_clk_freq,
                       sys_clk_freq);
-      /*
-      clock_configure(clk_adc,
-                      0, // No GLMUX
-                      CLOCKS_CLK_ADC_CTRL_AUXSRC_VALUE_CLKSRC_PLL_SYS,
-                      sys_clk_freq,
-                      sys_clk_freq/4);*/
-      clock_configure(clk_peri,
-                      0,
-                      CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS,
-                      sys_clk_freq,
-                      sys_clk_freq);
       break;
 
   }
-
-
-
   sleep_ms(1);
   measure_clocks();
 }
 
-
-uint32_t debug_gpio = 5;
 
 void enter_dormant()
 {
@@ -198,32 +133,19 @@ void enter_dormant()
   {
     tight_loop_contents();
   }
-  gpio_put(debug_gpio, true);
-  rosc_hw->dormant = 0x636f6d61;
-  //xosc_dormant();
+  //rosc_hw->dormant = 0x636f6d61;
+  xosc_dormant();
 
-  //configure_clocks(CLOCK_CONFIGURATION_HIGH_SPEED);
+  configure_clocks(CLOCK_CONFIGURATION_HIGH_SPEED);
   gpio_acknowledge_irq(power_button_gpio, IO_BANK0_DORMANT_WAKE_INTE0_GPIO0_EDGE_LOW_BITS);
 }
 
-
-
-void power_main_loop()
+int main()
 {
-  gpio_init(debug_gpio);
-  gpio_set_dir(debug_gpio, GPIO_OUT);
+  stdio_init_all();
+  printf("Booting!\r\n");
 
-  //vreg_set_voltage(VREG_VOLTAGE_0_95);
-
-/*
-  reset_block(
-          RESETS_RESET_USBCTRL_BITS |
-          RESETS_RESET_PWM_BITS |
-          RESETS_RESET_RTC_BITS |
-          RESETS_RESET_PIO0_BITS |
-          RESETS_RESET_UART0_BITS); // hold unneeded peripherals in reset
-          */
-  //configure_clocks(CLOCK_CONFIGURATION_LOW_POWER);
+  configure_clocks(CLOCK_CONFIGURATION_HIGH_SPEED);
 
   adc_init();
   adc_set_temp_sensor_enabled(true);
@@ -233,7 +155,7 @@ void power_main_loop()
 
   multicore_launch_core1(data_collection);
 
-  bool display_power_state = false;
+  bool display_power_state = true;
 
   bool enter_dormant_when_can = false;
 
@@ -252,9 +174,11 @@ void power_main_loop()
 
   while (true)
   {
+    influxdb_client.update();
+    ntp_client.update();
+
     if (enter_dormant_when_can && data_collection_ready_for_dormant)
     {
-
       enter_dormant();
       // Just exited dormant!
       power_button_time = get_absolute_time();
@@ -283,7 +207,7 @@ void power_main_loop()
 
     //display.update();
 
-    if (false && absolute_time_diff_us(power_button_time, get_absolute_time()) > 1000000)
+    if (absolute_time_diff_us(power_button_time, get_absolute_time()) > 1000000)
     {
       if (!gpio_get(power_button_gpio))
       {
@@ -306,13 +230,11 @@ void power_main_loop()
         if (absolute_time_diff_us(last_influx_connect_timestamp, get_absolute_time()) > 10*1000000)
         {
           last_influx_connect_timestamp = get_absolute_time();
-          influxdb_try_connect();
         }
       }
     }
 
     system_data_sources_core0_update();
-
-    //sleep_ms(10);
+    sleep_ms(10);
   }
 }

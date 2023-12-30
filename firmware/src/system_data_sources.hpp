@@ -4,17 +4,15 @@
 
 #ifndef THERMO_SCOPE_SYSTEM_DATA_SOURCES_HPP
 #define THERMO_SCOPE_SYSTEM_DATA_SOURCES_HPP
-
-#include "data_collection.hpp"
+#include <telemetry_manager.hpp>
 
 class SystemDataSources {
-  DataChannel* sys_time_channel;
-  DataChannel* battery_voltage_channel;
-  DataChannel* rp2040_temp_channel;
-  DataChannel* heap_space_free;
+  TelemetryManager::Channel sys_time_channel{"system_time_drift", "us"};
+  TelemetryManager::Channel battery_voltage_channel{"battery_voltage", "v"};
+  TelemetryManager::Channel rp2040_temp_channel{"rp2040_temp", "c"};
+  TelemetryManager::Channel heap_space_free{"heap_space_free"};
 
   public:
-  SystemDataSources();
 
   void update();
 };

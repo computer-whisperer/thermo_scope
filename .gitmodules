@@ -10,3 +10,6 @@
 [submodule "firmware/libs/uzlib"]
 	path = firmware/libs/uzlib
 	url = https://github.com/pfalcon/uzlib
+[submodule "firmware/libs/cw_pico_library"]
+	path = firmware/libs/cw_pico_library
+	url = git@github.com:computer-whisperer/cw_pico_library.git

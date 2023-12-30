@@ -8,13 +8,6 @@
 #include "power_status.h"
 #include "hardware/adc.h"
 
-SystemDataSources::SystemDataSources() {
-  sys_time_channel = data_collection_create_new_channel("system_time_drift");
-  battery_voltage_channel = data_collection_create_new_channel("battery_voltage");
-  rp2040_temp_channel = data_collection_create_new_channel("rp2040_temp");
-  heap_space_free = data_collection_create_new_channel("heap_space_free");
-}
-
 static float last_pushed_vbat = 0;
 static volatile float vbat = 0;
 
@@ -29,20 +22,20 @@ static int32_t prev_accumulated_error = 0;
 void SystemDataSources::update() {
   //sys_time_channel->push_new_value((double)to_us_since_boot(get_absolute_time()));
   if (vbat != last_pushed_vbat) {
-    battery_voltage_channel->push_new_value(vbat);
+    battery_voltage_channel.new_data(vbat);
     last_pushed_vbat = vbat;
   }
   if (rp2040_temp!= last_pushed_rp2040_temp) {
-    rp2040_temp_channel->push_new_value(rp2040_temp);
+    rp2040_temp_channel.new_data(rp2040_temp);
     last_pushed_rp2040_temp = rp2040_temp;
   }
   auto malloc_info = mallinfo();
-  heap_space_free->push_new_value((double)malloc_info.fordblks);
-
+  heap_space_free.new_data((double)malloc_info.fordblks);
+/*
   if (data_collection_time_error_since_last_sync_us != prev_accumulated_error)
   {
-    sys_time_channel->push_new_value((double)data_collection_time_error_since_last_sync_us);
-  }
+    sys_time_channel.new_data((double)data_collection_time_error_since_last_sync_us);
+  }*/
 }
 
 

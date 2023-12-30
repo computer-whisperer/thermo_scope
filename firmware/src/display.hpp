@@ -4,6 +4,7 @@
 
 #ifndef THERMO_SCOPE_DISPLAY_HPP
 #define THERMO_SCOPE_DISPLAY_HPP
+#include "lvgl.h"
 
 class Display
 {

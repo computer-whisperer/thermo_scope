@@ -4,14 +4,16 @@
 #include <src/core/lv_obj.h>
 #include <cstdio>
 #include "display.hpp"
+
+#include <time_manager.hpp>
+
 #include "ili9341.hpp"
 #include "lvgl.h"
 #include "data_collection.h"
 #include "pico/time.h"
-#include "influxdb_export.h"
+#include "main.hpp"
 #include "cyw43_ll.h"
 #include "cyw43.h"
-#include "xpt2046.h"
 #include "cyw43_shim.h"
 #include "data_collection.hpp"
 
@@ -38,6 +40,10 @@ static lv_indev_drv_t l_indev_drv;
 
 Display::Display() {
   init();
+}
+
+void xpt2046_read_cb(struct _lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {
+
 }
 
 void Display::init() {
@@ -87,8 +93,8 @@ void Display::init() {
   lv_obj_set_width(channel_select_dropdown_obj, 200);
   //lv_obj_add_event_cb(channel_select_dropdown_obj, on_dropdown_select, LV_EVENT_VALUE_CHANGED, NULL);
 
-  channel_ref = data_collection_get_default_channel_pointer();
-  channel_names_rev = data_collection_update_channel_names(channel_select_dropdown_obj, channel_names_rev);
+  //channel_ref = data_collection_get_default_channel_pointer();
+  //channel_names_rev = data_collection_update_channel_names(channel_select_dropdown_obj, channel_names_rev);
 
 }
 
@@ -108,7 +114,7 @@ void Display::update() {
   static int prev_influxdb_state = 100;
   static int prev_wifi_state = 100;
   int wifi_state = cyw43_shim_wifi_link_status(CYW43_ITF_STA);
-  int influxdb_state = influxdb_connection_state;
+  int influxdb_state = influxdb_client.connected;
   if ((prev_influxdb_state != influxdb_state) || (prev_wifi_state!= wifi_state))
   {
     const char * wifi_state_str;
@@ -134,17 +140,11 @@ void Display::update() {
     }
     switch(influxdb_state)
     {
-      case InfluxDBConnectionState_INVALID:
-        influxdb_state_str = "Invalid";
-        break;
-      case InfluxDBConnectionState_DISCONNECTED:
+      case 0:
         influxdb_state_str = "Disconnected";
         break;
-      case InfluxDBConnectionState_CONNECTED:
+      case 1:
         influxdb_state_str = "Connected";
-        break;
-      case InfluxDBConnectionState_CONNECTING:
-        influxdb_state_str = "Connecting";
         break;
     }
     char buff[100];
@@ -156,7 +156,7 @@ void Display::update() {
 
   char buf[100];
   static uint64_t last_timestamp_seen = 0;
-  uint64_t new_timestamp = data_collection_get_unix_time_us()/1000000;
+  uint64_t new_timestamp = TimeManager::get_unix_time_us()/1000000;
   if (new_timestamp != last_timestamp_seen) {
     last_timestamp_seen = new_timestamp;
     snprintf(buf, sizeof(buf), "%llu", new_timestamp);

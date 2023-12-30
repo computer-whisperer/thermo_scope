@@ -12,6 +12,8 @@ set(PICO_SDK_PATH ../libs/pico-sdk)
 set(PICO_BOARD pico_w CACHE STRING "Board type")
 set(PICO_DEOPTIMIZED_DEBUG 1)
 
+
+add_compile_definitions(PICO_STACK_SIZE=4096)
 add_compile_definitions(PICO_USE_STACK_GUARDS=1)
 # add_compile_definitions(SYS_CLK_KHZ=15306)
 # add_compile_definitions(PLL_COMMON_REFDIV=2)
@@ -38,40 +40,43 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
+set(UZLIB_DIR libs/uzlib)
+set(CWLIB_DIR libs/cw_pico_library)
 
 add_executable( thermo_scope
-        src/main.c
-        src/ili9341.cpp
-        src/xpt2046.cpp
-        src/pio_spi.c
+        src/main.cpp
         src/data_collection.cpp
-        src/max11254.cpp
-        src/influxdb_export.cpp
-        src/bs_280.cpp
         src/system_data_sources.cpp
         src/power_status.c
-        src/bme280.cpp
-        src/bmp581.cpp
-        src/i2c_bus_manager.cpp
-        src/ublox_g7.cpp
         src/display.cpp
-        src/power.cpp
-        src/cyw43_shim.c
-        ${CMAKE_CURRENT_LIST_DIR}/libs/uzlib/src/adler32.c
-        ${CMAKE_CURRENT_LIST_DIR}/libs/uzlib/src/crc32.c
-        ${CMAKE_CURRENT_LIST_DIR}/libs/uzlib/src/defl_static.c
-        ${CMAKE_CURRENT_LIST_DIR}/libs/uzlib/src/genlz77.c
-        ${CMAKE_CURRENT_LIST_DIR}/libs/uzlib/src/tinfgzip.c
-        ${CMAKE_CURRENT_LIST_DIR}/libs/uzlib/src/tinflate.c
-        ${CMAKE_CURRENT_LIST_DIR}/libs/uzlib/src/tinfzlib.c
+        ${CWLIB_DIR}/drivers/ili9341.cpp
+        ${CWLIB_DIR}/drivers/max11254.cpp
+        ${CWLIB_DIR}/drivers/bme280.cpp
+        ${CWLIB_DIR}/drivers/bmp581.cpp
+        ${CWLIB_DIR}/drivers/bmp585.cpp
+        ${CWLIB_DIR}/drivers/sht45.cpp
+        ${CWLIB_DIR}/drivers/tsys01.cpp
+        ${CWLIB_DIR}/drivers/i2c_bus_manager.cpp
+        ${CWLIB_DIR}/drivers/ublox_ubx.cpp
+        ${CWLIB_DIR}/utils/cyw43_shim.c
+        ${CWLIB_DIR}/utils/gpio_isr_mux.cpp
+        ${CWLIB_DIR}/utils/telemetry_manager.cpp
+        ${CWLIB_DIR}/utils/time_manager.cpp
+        ${CWLIB_DIR}/clients/ntp_client.cpp
+        ${CWLIB_DIR}/clients/influxdb_client.cpp
+        ${UZLIB_DIR}/src/adler32.c
+        ${UZLIB_DIR}/src/crc32.c
+        ${UZLIB_DIR}/src/defl_static.c
+        ${UZLIB_DIR}/src/genlz77.c
+        ${UZLIB_DIR}/src/tinfgzip.c
+        ${UZLIB_DIR}/src/tinflate.c
+        ${UZLIB_DIR}/src/tinfzlib.c
         )
-# add pio file
-pico_generate_pio_header(thermo_scope ${CMAKE_CURRENT_LIST_DIR}/src/spi.pio)
 
 pico_set_program_name(thermo_scope "lcdTest")
 pico_set_program_version(thermo_scope "0.1")
 
-pico_enable_stdio_uart(thermo_scope 0)
+pico_enable_stdio_uart(thermo_scope 1)
 pico_enable_stdio_usb(thermo_scope 0)
 
 # Add the standard library to the build
@@ -85,7 +90,10 @@ target_include_directories(thermo_scope PRIVATE
         )
 
 target_include_directories(thermo_scope PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}/libs/uzlib/src/
+        ${UZLIB_DIR}/src/
+        ${CWLIB_DIR}/clients/
+        ${CWLIB_DIR}/drivers/
+        ${CWLIB_DIR}/utils/
         )
 
 # Add any user requested libraries
