@@ -7,12 +7,6 @@
 [submodule "firmware/libs/freeRTOS"]
 	path = firmware/libs/freeRTOS
 	url = https://github.com/freeRTOS/freeRTOS
-[submodule "firmware/libs/uzlib"]
-	path = firmware/libs/uzlib
-	url = https://github.com/pfalcon/uzlib
 [submodule "firmware/libs/cw_pico_library"]
 	path = firmware/libs/cw_pico_library
 	url = git@github.com:computer-whisperer/cw_pico_library.git
-[submodule "firmware/libs/TFT_eSPI"]
-	path = firmware/libs/TFT_eSPI
-	url = https://github.com/Bodmer/TFT_eSPI

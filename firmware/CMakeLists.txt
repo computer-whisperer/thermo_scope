@@ -40,8 +40,9 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-set(UZLIB_DIR libs/uzlib)
+
 set(CWLIB_DIR libs/cw_pico_library)
+set(UZLIB_DIR ${CWLIB_DIR}/libs/uzlib)
 
 add_executable( thermo_scope
         src/main.cpp
@@ -89,7 +90,7 @@ target_include_directories(thermo_scope PRIVATE
         )
 
 target_include_directories(thermo_scope PRIVATE
-        libs/TFT_eSPI/TFT_Drivers/
+        ${CWLIB_DIR}/libs/TFT_eSPI/TFT_Drivers/
         ${UZLIB_DIR}/src/
         ${CWLIB_DIR}/clients/
         ${CWLIB_DIR}/drivers/
