@@ -46,10 +46,8 @@ set(UZLIB_DIR ${CWLIB_DIR}/libs/uzlib)
 
 add_executable( thermo_scope
         src/main.cpp
-        src/data_collection.cpp
         src/system_data_sources.cpp
         src/power_status.c
-        src/display.cpp
         ${CWLIB_DIR}/drivers/tft_espi.cpp
         ${CWLIB_DIR}/drivers/st7789v2.cpp
         ${CWLIB_DIR}/drivers/gc9a01.cpp
