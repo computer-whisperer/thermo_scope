@@ -21,6 +21,7 @@
 #include <hardware/watchdog.h>
 #include <hardware/xosc.h>
 #include <hardware/regs/clocks.h>
+#include <pico/unique_id.h>
 
 #include "influxdb_client.hpp"
 #include "ntp_client.hpp"
@@ -31,12 +32,6 @@ InfluxDBClient influxdb_client{"general_telemetry"};
 NTPClient ntp_client;
 
 static lv_indev_drv_t l_indev_drv;
-
-
-
-void xpt2046_read_cb(struct _lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {
-
-}
 
 
 static ST7789V2* st7789_v2;
@@ -61,11 +56,6 @@ public:
     gpio_set_function(14, GPIO_FUNC_SPI);
     st7789_v2 = new ST7789V2(spi1, 13, 26, 22, 16);
     st7789_v2->register_with_lvgl();
-
-    lv_indev_drv_init(&l_indev_drv);
-    l_indev_drv.type = LV_INDEV_TYPE_POINTER;
-    l_indev_drv.read_cb = xpt2046_read_cb;
-    lv_indev_drv_register(&l_indev_drv);
 
     static lv_style_t style_value;
     lv_style_init(&style_value);
@@ -336,7 +326,12 @@ int main()
 
   printf("Booting!\r\n");
 
-  watchdog_enable(4000, true);
+  watchdog_enable(10000, true);
+
+  pico_unique_board_id_t unique_board_id;
+  pico_get_unique_board_id(&unique_board_id);
+  const auto board_id = unique_board_id.id[6] + unique_board_id.id[7]<<8;
+  telemetry_manager.update_tags(",pico_id=" + std::to_string(board_id));
 
   configure_clocks(CLOCK_CONFIGURATION_HIGH_SPEED);
 
