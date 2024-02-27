@@ -43,9 +43,9 @@ pico_sdk_init()
 
 set(CWLIB_DIR libs/cw_pico_library)
 set(UZLIB_DIR ${CWLIB_DIR}/libs/uzlib)
+set(PICO_PIO_USB_DIR libs/Pico-PIO-USB)
 
-add_executable( thermo_scope
-        src/main.cpp
+set(SHARED_SOURCES
         src/system_data_sources.cpp
         src/power_status.c
         ${CWLIB_DIR}/drivers/tft_espi.cpp
@@ -69,50 +69,58 @@ add_executable( thermo_scope
         ${UZLIB_DIR}/src/tinfgzip.c
         ${UZLIB_DIR}/src/tinflate.c
         ${UZLIB_DIR}/src/tinfzlib.c
-        )
-
-pico_set_program_name(thermo_scope "lcdTest")
-pico_set_program_version(thermo_scope "0.1")
-
-pico_enable_stdio_uart(thermo_scope 1)
-pico_enable_stdio_usb(thermo_scope 0)
-
-# Add the standard library to the build
-target_link_libraries(thermo_scope
-        pico_stdlib)
-
-# Add the standard include files to the build
-target_include_directories(thermo_scope PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/.. # for our common lwipopts or any other standard includes, if required
-        )
+        ${CMAKE_CURRENT_LIST_DIR}
+)
 
-target_include_directories(thermo_scope PRIVATE
-        ${CWLIB_DIR}/libs/TFT_eSPI/TFT_Drivers/
-        ${UZLIB_DIR}/src/
-        ${CWLIB_DIR}/clients/
-        ${CWLIB_DIR}/drivers/
-        ${CWLIB_DIR}/utils/
-        )
+set(SHARED_INCLUDE_DIRS
+        ${CWLIB_DIR}/libs/TFT_eSPI/TFT_Drivers
+        ${UZLIB_DIR}/src
+        ${CWLIB_DIR}/clients
+        ${CWLIB_DIR}/drivers
+        ${CWLIB_DIR}/utils
+        ${PICO_PIO_USB_DIR}/src
+)
 
-# Add any user requested libraries
-target_link_libraries(thermo_scope
+set(SHARED_LIBS
         hardware_gpio
         hardware_spi
         hardware_dma
         hardware_pio
         hardware_adc
         hardware_i2c
+        pico_pio_usb
         pico_cyw43_arch_lwip_poll
         pico_multicore
         hardware_pwm
         pico_sync
+        pico_stdlib
         lvgl
-        )
+)
+
+
+add_executable( thermo_scope src/main.cpp ${SHARED_SOURCES})
+target_include_directories(thermo_scope PRIVATE ${SHARED_INCLUDE_DIRS})
+target_link_libraries(thermo_scope ${SHARED_LIBS})
+pico_add_extra_outputs(thermo_scope)
+
+add_executable( simple_sensor src/simple_sensor_main.cpp ${SHARED_SOURCES})
+target_include_directories(simple_sensor PRIVATE ${SHARED_INCLUDE_DIRS})
+target_link_libraries(simple_sensor ${SHARED_LIBS})
+pico_add_extra_outputs(simple_sensor)
+
+add_executable( usb_slave_test src/usb_slave_test_main.cpp ${SHARED_SOURCES})
+target_include_directories(usb_slave_test PRIVATE ${SHARED_INCLUDE_DIRS})
+target_link_libraries(usb_slave_test ${SHARED_LIBS})
+pico_add_extra_outputs(usb_slave_test)
+
+add_executable( usb_host_test src/usb_host_test_main.cpp ${SHARED_SOURCES})
+target_include_directories(usb_host_test PRIVATE ${SHARED_INCLUDE_DIRS})
+target_link_libraries(usb_host_test ${SHARED_LIBS})
+pico_add_extra_outputs(usb_host_test)
 
 set(LV_CONF_PATH ${CMAKE_CURRENT_LIST_DIR}/src/lv_conf.h)
 set(LV_LVGL_H_INCLUDE_SIMPLE 1)
 
-pico_add_extra_outputs(thermo_scope)
-
+add_subdirectory(${PICO_PIO_USB_DIR} pico_pio_usb)
 add_subdirectory(libs/lvgl)
